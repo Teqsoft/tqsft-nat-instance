@@ -27,6 +27,6 @@ jobs:
        uses: youyo/aws-cdk-github-actions@v2
        with:
          cdk_subcommand: 'deploy'
-         cdk_stack: 'TqsftVpcStack'
+         cdk_stack: 'TqsftNatInstanceStack'
          cdk_args: '--parameters KeyPairName=${{ vars.KEY_PAIR_NAME }} --require-approval never' 
          actions_comment: false
