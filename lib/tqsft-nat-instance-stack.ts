@@ -26,7 +26,7 @@ export class TqsftNatInstanceStack extends cdk.Stack {
     });
 
     const cloudConfig = UserData.custom(readFileSync('src/cloud-config.txt','utf8'));
-    const alterNAT = UserData.custom(readFileSync('src/alterNAT.sh', 'utf8').replace('${ROUTE_TABLES_IDS}',isolatedRouteTables));
+    const alterNAT = UserData.custom(readFileSync('src/alternat.sh', 'utf8').replace('${ROUTE_TABLES_IDS}',isolatedRouteTables));
     
     const multipartUserData = new MultipartUserData();
     multipartUserData.addPart(MultipartBody.fromUserData(cloudConfig, "text/cloud-config"));
