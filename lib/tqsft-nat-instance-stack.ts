@@ -1,6 +1,6 @@
 import * as cdk from 'aws-cdk-lib';
 import { AutoScalingGroup } from 'aws-cdk-lib/aws-autoscaling';
-import { InstanceClass, InstanceSize, InstanceType, KeyPair, LaunchTemplate, MachineImage, MultipartBody, MultipartUserData, OperatingSystemType, Peer, Port, SecurityGroup, SubnetType, UserData, Vpc } from 'aws-cdk-lib/aws-ec2';
+import { InstanceClass, InstanceSize, InstanceType, KeyPair, LaunchTemplate, MachineImage, MultipartBody, MultipartUserData, OperatingSystemType, Peer, Port, SecurityGroup, SubnetType, UserData, Vpc, WindowsVersion } from 'aws-cdk-lib/aws-ec2';
 import { Effect, PolicyStatement, Role, ServicePrincipal } from 'aws-cdk-lib/aws-iam';
 import { LogGroup, RetentionDays } from 'aws-cdk-lib/aws-logs';
 import { StringParameter } from 'aws-cdk-lib/aws-ssm';
@@ -97,6 +97,49 @@ export class TqsftNatInstanceStack extends cdk.Stack {
       },
       autoScalingGroupName: 'NatInstancesASG'
     });
+
+    // WINDOWS LAUNCH TEMPLATE
+
+    const windowsInstanceRole = new Role(this, 'WindowsRole', {
+      assumedBy: new ServicePrincipal('ec2.amazonaws.com'),
+      roleName: "WindowsInstanceProfile"
+    });
+
+    windowsInstanceRole.addManagedPolicy({
+      managedPolicyArn: "arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore"
+    })
+
+    const windowsLaunchTemplateSG = new SecurityGroup(this, "WindowsLaunchTemplateSG", {
+      vpc: vpc,
+      securityGroupName: "WindowsLaunchTemplateSG"
+    });
+
+    windowsLaunchTemplateSG.addIngressRule(
+      Peer.anyIpv4(), 
+      Port.RDP, 
+      "Ingress any IP to RPD"
+    )
+
+    const windowsLaunchTemplate = new LaunchTemplate(this, "WindowsLaunchTemplate", {
+      // requireImdsv2: true,
+      role: windowsInstanceRole,
+      instanceType: InstanceType.of(InstanceClass.T3A, InstanceSize.LARGE),
+      machineImage: MachineImage.latestWindows(WindowsVersion.WINDOWS_SERVER_2022_ENGLISH_FULL_BASE),
+      keyPair: keyPair,
+      launchTemplateName: "WindowsLaunchTemplate",
+      securityGroup: windowsLaunchTemplateSG
+    });
+
+    // const windowsASG = new AutoScalingGroup(this, 'WindowsASG', {
+    //   vpc: vpc,
+    //   launchTemplate: windowsLaunchTemplate,
+    //   minCapacity: 0,
+    //   maxCapacity: 1,
+    //   vpcSubnets: {
+    //     subnetType: SubnetType.PUBLIC
+    //   },
+    //   autoScalingGroupName: 'WindowsASG'
+    // });
 
   }
 }
