@@ -214,9 +214,6 @@ export class TqsftNatInstanceStack extends cdk.Stack {
       launchTemplate: windowsLaunchTemplate,
       minCapacity: 0,
       maxCapacity: 1,
-      vpcSubnets: {
-        subnetType: SubnetType.PUBLIC
-      },
       autoScalingGroupName: 'WindowsASG'
     });
 
