@@ -209,16 +209,16 @@ export class TqsftNatInstanceStack extends cdk.Stack {
       ]
     });
 
-    // const windowsASG = new AutoScalingGroup(this, 'WindowsASG', {
-    //   vpc: vpc,
-    //   launchTemplate: windowsLaunchTemplate,
-    //   minCapacity: 0,
-    //   maxCapacity: 1,
-    //   vpcSubnets: {
-    //     subnetType: SubnetType.PUBLIC
-    //   },
-    //   autoScalingGroupName: 'WindowsASG'
-    // });
+    const windowsASG = new AutoScalingGroup(this, 'WindowsASG', {
+      vpc: vpc,
+      launchTemplate: windowsLaunchTemplate,
+      minCapacity: 0,
+      maxCapacity: 1,
+      vpcSubnets: {
+        subnetType: SubnetType.PUBLIC
+      },
+      autoScalingGroupName: 'WindowsASG'
+    });
 
   }
 }
