@@ -1,11 +1,16 @@
 import * as cdk from 'aws-cdk-lib';
-import { AutoScalingGroup } from 'aws-cdk-lib/aws-autoscaling';
-import { InstanceClass, InstanceSize, InstanceType, KeyPair, LaunchTemplate, MachineImage, MultipartBody, MultipartUserData, OperatingSystemType, Peer, Port, SecurityGroup, SubnetType, UserData, Vpc, WindowsVersion } from 'aws-cdk-lib/aws-ec2';
-import { Effect, PolicyStatement, Role, ServicePrincipal } from 'aws-cdk-lib/aws-iam';
+import { AutoScalingGroup, LifecycleTransition } from 'aws-cdk-lib/aws-autoscaling';
+import { EbsDeviceVolumeType, InstanceClass, InstanceSize, InstanceType, KeyPair, LaunchTemplate, MachineImage, MultipartBody, MultipartUserData, OperatingSystemType, Peer, Port, SecurityGroup, SubnetType, UserData, Vpc, WindowsVersion } from 'aws-cdk-lib/aws-ec2';
+import { Effect, ManagedPolicy, PolicyStatement, Role, ServicePrincipal } from 'aws-cdk-lib/aws-iam';
 import { LogGroup, RetentionDays } from 'aws-cdk-lib/aws-logs';
+import { Topic } from 'aws-cdk-lib/aws-sns';
 import { StringParameter } from 'aws-cdk-lib/aws-ssm';
+import { Code, Function, Runtime } from 'aws-cdk-lib/aws-lambda';
 import { Construct } from 'constructs';
 import { readFileSync } from 'fs';
+import path = require('path');
+import { TopicHook } from 'aws-cdk-lib/aws-autoscaling-hooktargets';
+import { LambdaSubscription } from 'aws-cdk-lib/aws-sns-subscriptions';
 // import * as sqs from 'aws-cdk-lib/aws-sqs';
 
 export class TqsftNatInstanceStack extends cdk.Stack {
@@ -98,7 +103,65 @@ export class TqsftNatInstanceStack extends cdk.Stack {
       autoScalingGroupName: 'NatInstancesASG'
     });
 
-    // WINDOWS LAUNCH TEMPLATE
+    /**
+     *  Lifecycle Hooks
+     */
+
+    // const lambdaExecutionRole = new Role(this, 'LambdaExecutionRole', {
+    //   assumedBy: new ServicePrincipal('lambda.amazonaws.com'),
+    //   roleName: 'LambdaTerminationHookRole'
+    // })
+
+    // lambdaExecutionRole.addManagedPolicy({
+    //   managedPolicyArn: 'arn:aws:iam::aws:policy/service-role/AWSLambdaVPCAccessExecutionRole'
+    // })
+
+    // lambdaExecutionRole.addToPolicy(new PolicyStatement({
+    //   effect: Effect.ALLOW,
+    //   sid: '',
+    //   actions: [
+    //     "ec2:DescribeNatGateways",
+    //     "ec2:DescribeRouteTables",
+    //     "ec2:DescribeSubnets",
+    //     "ec2:ReplaceRoute",
+    //     "autoscaling:DescribeAutoScalingGroups"
+    //   ],
+    //   resources: [
+    //     '*'
+    //   ]
+    // }));
+
+    // const alternatLambdaTopic = new Topic(this, 'Topic', {
+    //   topicName: 'AlternatatLambdaTopic',
+    //   displayName: 'AlternatLambdaTopic'
+    // });
+
+    // const alternatTopicHook = new TopicHook(alternatLambdaTopic);
+
+    // const alternatLambdaFunction = new Function(this, 'ShutdownEcsSvcsFunction', {
+    //     functionName: 'ShutdownEcsSvcs',
+    //     handler: "handler",
+    //     runtime: Runtime.PYTHON_3_12,
+    //     code: Code.fromAsset(path.join(__dirname, '../src/replace-route/app.py')),
+    //     memorySize: 512,
+    //     timeout: cdk.Duration.minutes(5),
+    //     // initialPolicy: [ lambdaPolicy ],
+    //     logRetention: RetentionDays.ONE_WEEK,
+    //     role: lambdaExecutionRole
+    // })
+
+    // alternatLambdaTopic.addSubscription(new LambdaSubscription(alternatLambdaFunction));
+
+    // natInstancesASG.addLifecycleHook('InstanceTerminatingHook', {
+    //   lifecycleTransition: LifecycleTransition.INSTANCE_TERMINATING,
+    //   lifecycleHookName: 'InstanceTerminatingHook',
+    //   notificationTarget: alternatTopicHook,
+    //   notificationMetadata: "INFO: An instance has been terminated"
+    // });
+
+    /**
+     *  WINDOWS LAUNCH TEMPLATE
+     */
 
     const windowsInstanceRole = new Role(this, 'WindowsRole', {
       assumedBy: new ServicePrincipal('ec2.amazonaws.com'),
@@ -124,10 +187,26 @@ export class TqsftNatInstanceStack extends cdk.Stack {
       // requireImdsv2: true,
       role: windowsInstanceRole,
       instanceType: InstanceType.of(InstanceClass.T3A, InstanceSize.LARGE),
-      machineImage: MachineImage.latestWindows(WindowsVersion.WINDOWS_SERVER_2022_ENGLISH_FULL_BASE),
+      // machineImage: MachineImage.latestWindows(WindowsVersion.WINDOWS_SERVER_2022_ENGLISH_FULL_BASE),
+      machineImage: MachineImage.genericWindows({
+        'us-east-1': 'ami-0812a5ce5b386f439'
+      }),
       keyPair: keyPair,
       launchTemplateName: "WindowsLaunchTemplate",
-      securityGroup: windowsLaunchTemplateSG
+      securityGroup: windowsLaunchTemplateSG,
+      blockDevices: [
+        {
+          deviceName: '/dev/sda1',
+          volume: {
+            ebsDevice: {
+              deleteOnTermination: true,
+              // iops: 3000,
+              volumeSize: 50,
+              volumeType: EbsDeviceVolumeType.GP3
+            }
+          }
+        }
+      ]
     });
 
     // const windowsASG = new AutoScalingGroup(this, 'WindowsASG', {
