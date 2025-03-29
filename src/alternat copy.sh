@@ -4,13 +4,25 @@ exec > >(tee /var/log/user-data.log|logger -t user-data -s 2>/dev/console) 2>&1
 CONFIG_FILE="/etc/alternat.conf"
 
 echo route_table_ids_csv=${ROUTE_TABLES_IDS} >> "$CONFIG_FILE"
-
 # Installing Software
 sudo apt-get update
 sudo apt-get install -y iptables unzip 
 curl "https://awscli.amazonaws.com/awscli-exe-linux-aarch64.zip" -o "awscliv2.zip"
 unzip  -qq ./awscliv2.zip
 ./aws/install
+
+curl -sSf -o nordvpn-install.sh https://downloads.nordcdn.com/apps/linux/install.sh
+chmod 755 ./nordvpn-install.sh
+./nordvpn-install.sh -n
+sudo usermod -aG nordvpn ubuntu
+nordvpn set lan-discovery enable
+
+iptables -t nat -A POSTROUTING -o nordlynx -j MASQUERADE
+iptables -A FORWARD -i nordlynx -o ens5 -m state --state RELATED,ESTABLISHED -j ACCEPT
+iptables -A FORWARD -i ens5 -o nordlynx -j ACCEPT
+
+# sudo nordvpn login --token {{NORDVPN TOKEN}}
+# sudo nordvpn connect Puerto_Rico
 
 /bin/echo "Hello World" >> /tmp/testfile.txt
 

@@ -62,6 +62,20 @@ export class TqsftNatInstanceStack extends cdk.Stack {
       ],
       resources: [ '*' ]
     }))
+    instanceRole.addToPolicy(new PolicyStatement({
+      effect: Effect.ALLOW,
+      actions: [
+        's3:ListBucket',
+        's3:ListObjectsV2',
+        's3:GetObject',
+        's3:PutObject'
+      ],
+      resources: [
+        'arn:aws:s3:::ecs-clusters-space',
+        'arn:aws:s3:::ecs-clusters-space/',
+        'arn:aws:s3:::ecs-clusters-space/*'
+      ]
+    }));
 
     const launchTemplateSG = new SecurityGroup(this, "LaunchTemplateSG", {
       vpc: vpc,
@@ -76,6 +90,10 @@ export class TqsftNatInstanceStack extends cdk.Stack {
 
     const keyPair = KeyPair.fromKeyPairName(this, "RaulRTKeyPair", keyPairName.valueAsString);
 
+    /*
+     *  NAT Instance
+     */
+    
     const launchTemplate = new LaunchTemplate(this, "LaunchTemplate", {
       // requireImdsv2: true,
       role: instanceRole,
@@ -101,6 +119,130 @@ export class TqsftNatInstanceStack extends cdk.Stack {
         subnetType: SubnetType.PUBLIC
       },
       autoScalingGroupName: 'NatInstancesASG'
+    });
+
+    /*
+     *  Proxy Server to replace Load Balancer
+     */
+
+    const proxyLaunchTemplateSG = new SecurityGroup(this, "ProxyLaunchTemplateSG", {
+      vpc: vpc,
+      securityGroupName: "ProxyLaunchTemplateSG"
+    });
+
+    proxyLaunchTemplateSG.addIngressRule(
+      Peer.ipv4(vpcCidr), 
+      Port.allTraffic(), 
+      "Ingress All Trafic in the subnet"
+    )
+
+    proxyLaunchTemplateSG.addIngressRule(
+      Peer.anyIpv4(),
+      Port.tcp(80),
+      "Ingress for HTTP Traffic"
+    )
+
+    proxyLaunchTemplateSG.addIngressRule(
+      Peer.anyIpv4(),
+      Port.udp(10443),
+      "Ingress for HTTP Traffic"
+    )
+
+    const proxtScript = UserData.custom(readFileSync('src/proxyScript.sh', 'utf8'));
+              // .replace('${ROUTE_TABLES_IDS}',isolatedRouteTables));
+    
+    const multipartUserData4Proxy = new MultipartUserData();
+    multipartUserData4Proxy.addPart(MultipartBody.fromUserData(cloudConfig, "text/cloud-config"));
+    multipartUserData4Proxy.addPart(MultipartBody.fromUserData(proxtScript, "text/x-shellscript"));
+
+
+    const proxyLaunchTemplate = new LaunchTemplate(this, "ProxyLaunchTemplate", {
+      // requireImdsv2: true,
+      role: instanceRole,
+      instanceType: InstanceType.of(InstanceClass.T4G, InstanceSize.NANO),
+      machineImage: MachineImage.fromSsmParameter(
+          "/aws/service/canonical/ubuntu/server-minimal/24.04/stable/current/arm64/hvm/ebs-gp3/ami-id", {
+            os: OperatingSystemType.LINUX,
+            userData: multipartUserData4Proxy
+        }
+      ),
+      keyPair: keyPair,
+      launchTemplateName: "ProxyLaunchTemplate",
+      securityGroup: proxyLaunchTemplateSG,
+      
+    });
+
+    const proxyInstancesASG = new AutoScalingGroup(this, `proxy-instances-asg`, {
+      vpc: vpc,
+      launchTemplate: proxyLaunchTemplate,
+      minCapacity: 0,
+      maxCapacity: 1,
+      vpcSubnets: {
+        subnetType: SubnetType.PUBLIC
+      },
+      autoScalingGroupName: 'ProxyInstancesASG'
+    });
+
+    /*
+     *  NAT & Proxy Server in One
+     */
+
+    const proxyNatLaunchTemplateSG = new SecurityGroup(this, "ProxyNatLaunchTemplateSG", {
+      vpc: vpc,
+      securityGroupName: "ProxyNatLaunchTemplateSG"
+    });
+
+    proxyNatLaunchTemplateSG.addIngressRule(
+      Peer.ipv4(vpcCidr), 
+      Port.allTraffic(), 
+      "Ingress All Trafic in the subnet"
+    )
+
+    proxyNatLaunchTemplateSG.addIngressRule(
+      Peer.anyIpv4(),
+      Port.tcp(80),
+      "Ingress for HTTP Traffic"
+    )
+
+    proxyNatLaunchTemplateSG.addIngressRule(
+      Peer.anyIpv4(),
+      Port.udp(10443),
+      "Ingress for HTTP Traffic"
+    )
+
+    const proxyMergedScript = UserData.custom(readFileSync('src/merged-script.sh', 'utf8'));
+              // .replace('${ROUTE_TABLES_IDS}',isolatedRouteTables));
+    
+    const multipartUserData4ProxyNat = new MultipartUserData();
+    multipartUserData4ProxyNat.addPart(MultipartBody.fromUserData(cloudConfig, "text/cloud-config"));
+    multipartUserData4ProxyNat.addPart(MultipartBody.fromUserData(proxyMergedScript, "text/x-shellscript"));
+
+
+    const proxyNatLaunchTemplate = new LaunchTemplate(this, "ProxyNatLaunchTemplate", {
+      // requireImdsv2: true,
+      role: instanceRole,
+      instanceType: InstanceType.of(InstanceClass.T4G, InstanceSize.NANO),
+      machineImage: MachineImage.fromSsmParameter(
+          "/aws/service/canonical/ubuntu/server-minimal/24.04/stable/current/arm64/hvm/ebs-gp3/ami-id", {
+            os: OperatingSystemType.LINUX,
+            userData: multipartUserData4ProxyNat
+        }
+      ),
+      keyPair: keyPair,
+      launchTemplateName: "ProxyNatLaunchTemplate",
+      securityGroup: proxyNatLaunchTemplateSG,
+      
+    });
+
+    const proxyNatInstancesASG = new AutoScalingGroup(this, `proxyNatInstancesASG`, {
+      vpc: vpc,
+      launchTemplate: proxyNatLaunchTemplate,
+      minCapacity: 0,
+      maxCapacity: 1,
+      vpcSubnets: {
+        subnetType: SubnetType.PUBLIC
+      },
+      autoScalingGroupName: 'ProxyNatInstancesASG'
     });
 
     /**
@@ -158,64 +300,6 @@ export class TqsftNatInstanceStack extends cdk.Stack {
     //   notificationTarget: alternatTopicHook,
     //   notificationMetadata: "INFO: An instance has been terminated"
     // });
-
-    /**
-     *  WINDOWS LAUNCH TEMPLATE
-     */
-
-    const windowsInstanceRole = new Role(this, 'WindowsRole', {
-      assumedBy: new ServicePrincipal('ec2.amazonaws.com'),
-      roleName: "WindowsInstanceProfile"
-    });
-
-    windowsInstanceRole.addManagedPolicy({
-      managedPolicyArn: "arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore"
-    })
-
-    const windowsLaunchTemplateSG = new SecurityGroup(this, "WindowsLaunchTemplateSG", {
-      vpc: vpc,
-      securityGroupName: "WindowsLaunchTemplateSG"
-    });
-
-    windowsLaunchTemplateSG.addIngressRule(
-      Peer.anyIpv4(), 
-      Port.RDP, 
-      "Ingress any IP to RPD"
-    )
-
-    const windowsLaunchTemplate = new LaunchTemplate(this, "WindowsLaunchTemplate", {
-      // requireImdsv2: true,
-      role: windowsInstanceRole,
-      instanceType: InstanceType.of(InstanceClass.T3A, InstanceSize.LARGE),
-      // machineImage: MachineImage.latestWindows(WindowsVersion.WINDOWS_SERVER_2022_ENGLISH_FULL_BASE),
-      machineImage: MachineImage.genericWindows({
-        'us-east-1': 'ami-0812a5ce5b386f439'
-      }),
-      keyPair: keyPair,
-      launchTemplateName: "WindowsLaunchTemplate",
-      securityGroup: windowsLaunchTemplateSG,
-      blockDevices: [
-        {
-          deviceName: '/dev/sda1',
-          volume: {
-            ebsDevice: {
-              deleteOnTermination: true,
-              // iops: 3000,
-              volumeSize: 50,
-              volumeType: EbsDeviceVolumeType.GP3
-            }
-          }
-        }
-      ]
-    });
-
-    const windowsASG = new AutoScalingGroup(this, 'WindowsASG', {
-      vpc: vpc,
-      launchTemplate: windowsLaunchTemplate,
-      minCapacity: 0,
-      maxCapacity: 1,
-      autoScalingGroupName: 'WindowsASG'
-    });
 
   }
 }

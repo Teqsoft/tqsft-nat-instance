@@ -1,22 +1,30 @@
 #!/bin/bash
 exec > >(tee /var/log/user-data.log|logger -t user-data -s 2>/dev/console) 2>&1
 
+# === Configuration Setup ===
 CONFIG_FILE="/etc/alternat.conf"
-
 echo route_table_ids_csv=${ROUTE_TABLES_IDS} >> "$CONFIG_FILE"
 
-# Installing Software
+# === Install Dependencies ===
+echo "Installing required packages..."
 sudo apt-get update
-sudo apt-get install -y iptables unzip 
+sudo apt-get install -y iptables unzip wget gnupg ca-certificates lsb-release
+
+# Install AWS CLI
 curl "https://awscli.amazonaws.com/awscli-exe-linux-aarch64.zip" -o "awscliv2.zip"
-unzip  -qq ./awscliv2.zip
+unzip -qq ./awscliv2.zip
 ./aws/install
 
-/bin/echo "Hello World" >> /tmp/testfile.txt
+# Install OpenResty
+wget -4 -O - https://openresty.org/package/pubkey.gpg | sudo gpg --dearmor -o /usr/share/keyrings/openresty.gpg
+echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/openresty.gpg] http://openresty.org/package/arm64/ubuntu $(lsb_release -sc) main" | sudo tee /etc/apt/sources.list.d/openresty.list > /dev/null
+sudo apt-get update
+sudo apt-get -y install openresty
 
+# === NAT Configuration (from alternat.sh) ===
 panic() {
   [ -n "$1" ] && echo "$1"
-  echo "alterNAT setup failed"
+  echo "Setup failed"
   exit 1
 }
 
@@ -38,8 +46,6 @@ validate_var() {
    fi
 }
 
-# configure_nat() sets up Linux to act as a NAT device.
-# See https://docs.aws.amazon.com/vpc/latest/userguide/VPC_NAT_Instance.html#NATInstance
 configure_nat() {
    echo "Beginning NAT configuration"
 
@@ -60,16 +66,12 @@ configure_nat() {
    IFS=' ' read -r -a vpc_cidrs <<< $(echo "$vpc_cidr_ranges")
 
    echo "Enabling NAT..."
-   # Read more about these settings here: https://www.kernel.org/doc/Documentation/networking/ip-sysctl.txt
-
-   sysctl -q -w net.ipv4.ip_forward=1 net.ipv4.conf.ens5.send_redirects=0 net.ipv4.ip_local_port_range="1024 65535" ||
-      panic
+   sysctl -q -w net.ipv4.ip_forward=1 net.ipv4.conf.ens5.send_redirects=0 net.ipv4.ip_local_port_range="1024 65535" || panic
 
    for cidr in "${vpc_cidrs[@]}";
    do
       (iptables -t nat -C POSTROUTING -o ens5 -s "$cidr" -j MASQUERADE 2> /dev/null ||
-      iptables -t nat -A POSTROUTING -o ens5 -s "$cidr" -j MASQUERADE) ||
-      panic
+      iptables -t nat -A POSTROUTING -o ens5 -s "$cidr" -j MASQUERADE) || panic
    done
 
    sysctl net.ipv4.ip_forward net.ipv4.conf.ens5.send_redirects net.ipv4.ip_local_port_range
@@ -78,8 +80,6 @@ configure_nat() {
    echo "NAT configuration complete"
 }
 
-# Disabling source/dest check is what makes a NAT instance a NAT instance.
-# See https://docs.aws.amazon.com/vpc/latest/userguide/VPC_NAT_Instance.html#EIP_Disable_SrcDestCheck
 disable_source_dest_check() {
    echo "Disabling source/destination check"
    aws ec2 modify-instance-attribute --instance-id $INSTANCE_ID --source-dest-check "{\"Value\": false}"
@@ -89,9 +89,6 @@ disable_source_dest_check() {
    echo "source/destination check disabled for $INSTANCE_ID"
 }
 
-
-# First try to replace an existing route
-# If no route exists already (e.g. first time set up) then create the route.
 configure_route_table() {
    echo "Configuring route tables"
 
@@ -123,34 +120,40 @@ configure_route_table() {
    done
 }
 
+# === OpenResty Configuration (from proxyScript.sh) ===
+setup_openresty() {
+   echo "Setting up OpenResty..."
+   cp /etc/openresty/nginx.conf /etc/openresty/nginx-backup.conf
+   aws s3 cp s3://ecs-clusters-space/OpenResty/nginx.conf /etc/openresty/nginx.conf
+   sudo systemctl restart openresty
+   echo "OpenResty setup complete"
+}
+
+# === Main Execution ===
+echo "Starting setup..."
+
+# Load config and fetch instance metadata
 load_config
 
 curl_cmd="curl --silent --fail"
-
 echo "Requesting IMDSv2 token"
 token=$($curl_cmd -X PUT "http://169.254.169.254/latest/api/token" -H "X-aws-ec2-metadata-token-ttl-seconds: 900")
 CURL_WITH_TOKEN="$curl_cmd -H \"X-aws-ec2-metadata-token: $token\""
 
-# Set CLI Output to text
 export AWS_DEFAULT_OUTPUT="text"
-
-# Disable pager output
-# https://docs.aws.amazon.com/cli/latest/userguide/cli-usage-pagination.html#cli-usage-pagination-clientside
-# This is not needed in aws cli v1 which is installed on the current version of Amazon Linux 2.
-# However, it may be needed to prevent breakage if they update to cli v2 in the future.
 export AWS_PAGER=""
 
-# Set Instance Identity URI
 II_URI="http://169.254.169.254/latest/dynamic/instance-identity/document"
-
-# Retrieve the instance ID
 INSTANCE_ID=$($CURL_WITH_TOKEN $II_URI | grep instanceId | awk -F\" '{print $4}')
-
-# Set region of NAT instance
 export AWS_DEFAULT_REGION=$($CURL_WITH_TOKEN $II_URI | grep region | awk -F\" '{print $4}')
 
-echo "Beginning self-managed NAT configuration"
+# Configure NAT and routing
 configure_nat
 disable_source_dest_check
 configure_route_table
-echo "Configuration completed successfully!"
+
+# Configure OpenResty
+setup_openresty
+
+echo "Hello World" > /hello-world.txt
+echo "Setup completed successfully!"
