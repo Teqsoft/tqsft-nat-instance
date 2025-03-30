@@ -210,13 +210,13 @@ export class TqsftNatInstanceStack extends cdk.Stack {
       "Ingress for HTTP Traffic"
     )
 
-    const proxyMergedScript = UserData.custom(readFileSync('src/merged-script.sh', 'utf8'));
-              // .replace('${ROUTE_TABLES_IDS}',isolatedRouteTables));
-    
+    const proxyMergedScript = UserData.custom(readFileSync('src/merged-script.sh', 'utf8')
+              .replace('${ROUTE_TABLES_IDS}',isolatedRouteTables)
+            );
+
     const multipartUserData4ProxyNat = new MultipartUserData();
     multipartUserData4ProxyNat.addPart(MultipartBody.fromUserData(cloudConfig, "text/cloud-config"));
     multipartUserData4ProxyNat.addPart(MultipartBody.fromUserData(proxyMergedScript, "text/x-shellscript"));
-
 
     const proxyNatLaunchTemplate = new LaunchTemplate(this, "ProxyNatLaunchTemplate", {
       // requireImdsv2: true,
