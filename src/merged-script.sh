@@ -147,7 +147,12 @@ II_URI="http://169.254.169.254/latest/dynamic/instance-identity/document"
 INSTANCE_ID=$($CURL_WITH_TOKEN $II_URI | grep instanceId | awk -F\" '{print $4}')
 export AWS_DEFAULT_REGION=$($CURL_WITH_TOKEN $II_URI | grep region | awk -F\" '{print $4}')
 
-echo "Instance ID = $INSTANCE_ID"
+echo "############### SCRIPT VARIABLES ###############"
+echo "TOKEN=$token"
+echo "CURL_COMMAND=$CURL_WITH_TOKEN"
+echo "INSTANCE_ID=$INSTANCE_ID"
+echo "AWS_REGION=$AWS_DEFAULT_REGION"
+echo "################################################"
 
 # Configure NAT and routing
 configure_nat
