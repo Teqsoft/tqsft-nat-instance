@@ -150,6 +150,7 @@ export AWS_DEFAULT_REGION=$($CURL_WITH_TOKEN $II_URI | grep region | awk -F\" '{
 echo "############### SCRIPT VARIABLES ###############"
 echo "TOKEN=$token"
 echo "CURL_COMMAND=$CURL_WITH_TOKEN"
+echo "INSTANCE_INFO=`$CURL_WITH_TOKEN $II_URI`"
 echo "INSTANCE_ID=$INSTANCE_ID"
 echo "AWS_REGION=$AWS_DEFAULT_REGION"
 echo "################################################"
