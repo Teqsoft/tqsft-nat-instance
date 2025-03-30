@@ -147,13 +147,14 @@ II_URI="http://169.254.169.254/latest/dynamic/instance-identity/document"
 INSTANCE_ID=$($CURL_WITH_TOKEN $II_URI | grep instanceId | awk -F\" '{print $4}')
 export AWS_DEFAULT_REGION=$($CURL_WITH_TOKEN $II_URI | grep region | awk -F\" '{print $4}')
 
+echo "Instance ID = $INSTANCE_ID"
+
 # Configure NAT and routing
 configure_nat
-disable_source_dest_check
+# disable_source_dest_check
 configure_route_table
 
 # Configure OpenResty
 setup_openresty
 
-echo "Hello World" > /hello-world.txt
 echo "Setup completed successfully!"
