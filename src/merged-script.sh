@@ -135,7 +135,7 @@ echo "Starting setup..."
 # Load config and fetch instance metadata
 load_config
 
-curl_cmd="curl --silent --fail"
+curl_cmd="curl --verbose"
 echo "Requesting IMDSv2 token"
 token=$($curl_cmd -X PUT "http://169.254.169.254/latest/api/token" -H "X-aws-ec2-metadata-token-ttl-seconds: 900")
 CURL_WITH_TOKEN="$curl_cmd -H \"X-aws-ec2-metadata-token: $token\""
