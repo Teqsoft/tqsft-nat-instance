@@ -56,7 +56,7 @@ configure_nat() {
    local vpc_cidr_uri="http://169.254.169.254/latest/meta-data/network/interfaces/macs/$ens5_mac/vpc-ipv4-cidr-blocks"
    echo "Metadata location for vpc ipv4 ranges: $vpc_cidr_uri"
 
-   local vpc_cidr_ranges=$($CURL_WITH_TOKEN "$vpc_cidr_uri")
+   local vpc_cidr_ranges=$(eval "$CURL_WITH_TOKEN \"$vpc_cidr_uri\"")
    if [ $? -ne 0 ]; then
       panic "Unable to obtain VPC CIDR range from metadata."
    else
@@ -135,7 +135,7 @@ echo "Starting setup..."
 # Load config and fetch instance metadata
 load_config
 
-curl_cmd="curl --verbose"
+curl_cmd="curl --silent --fail"
 echo "Requesting IMDSv2 token"
 token=$($curl_cmd -X PUT "http://169.254.169.254/latest/api/token" -H "X-aws-ec2-metadata-token-ttl-seconds: 900")
 CURL_WITH_TOKEN="$curl_cmd -H \"X-aws-ec2-metadata-token: $token\""
@@ -144,8 +144,8 @@ export AWS_DEFAULT_OUTPUT="text"
 export AWS_PAGER=""
 
 II_URI="http://169.254.169.254/latest/dynamic/instance-identity/document"
-INSTANCE_ID=$($CURL_WITH_TOKEN $II_URI | grep instanceId | awk -F\" '{print $4}')
-export AWS_DEFAULT_REGION=$($CURL_WITH_TOKEN $II_URI | grep region | awk -F\" '{print $4}')
+INSTANCE_ID=$(eval "$CURL_WITH_TOKEN $II_URI" | grep instanceId | awk -F\" '{print $4}')
+export AWS_DEFAULT_REGION=$(eval "$CURL_WITH_TOKEN $II_URI" | grep region | awk -F\" '{print $4}')
 
 echo "############### SCRIPT VARIABLES ###############"
 echo "TOKEN=$token"
