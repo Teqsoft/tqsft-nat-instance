@@ -157,7 +157,7 @@ echo "################################################"
 
 # Configure NAT and routing
 configure_nat
-# disable_source_dest_check
+disable_source_dest_check
 configure_route_table
 
 # Configure OpenResty
